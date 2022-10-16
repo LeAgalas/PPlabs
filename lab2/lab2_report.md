@@ -22,7 +22,7 @@ CPU:
 
 ### Принцип работы
 
-Приложенный алгоритм идет по массиву чисел и сравнивает их с текущим максимумом для данного треда. Если элемент оказывается больше, то в переменную max записывается значение этого элемента. После выполнения итерационной части треда, полученное внутри треда значение max сравнивается с max из shared области и из них выбирается наибольший. Таким образом наибольший элемент будет в max из shared области.
+Приложенный алгоритм идет по массиву чисел и сравнивает их с искомым (с target). Если элемент оказывается равен искомому, то в index сохраняется индекс данного элемента, а цикл завершается. Иначе цикл продолжает работу. Если искомый элемент не был найден в массиве, то индекс остается равным -1.
 
 ### Блок-схема
 
@@ -32,11 +32,10 @@ CPU:
         %%{ init : {"flowchart" : { "curve" : "stepAfter", "diagramPadding": 20 }}}%%
         A(Начало) --> B(i: 0 -> n)
         
-        B --> C{"array[i] > max"}
-        B --> E(Выход)
-        C -->|Да| D["max = array[i]"]
+        B --> C{"array[i] == max"}
+        C -->|Да| D["index = array[i]"]
         C -->|Нет| B
-        D --> B
+        D --> E (Выход)
        
 ```
 
@@ -45,18 +44,23 @@ CPU:
 
 **n** - количество чисел в массиве
 
+**m** - количество элементов в массив равных искомому target
+
 **p** - количество тредов
 
-- Сложность параллельного алгоритма - **O(n/p)**
 
-- Сложность последовательного алгоритма - **O(n)**
+- Сложность последовательного алгоритма
+    - В лучшем случае: **O(1)**
+    - В худшем случае: **O(n)**
+    - В среднем: **O(n/2)**    
 
-- Теоретическое ускорение - в **p** раз 
+- Сложность параллельного алгоритма - **O(n/p)** в среднем (обяазтельно пройти весь массив)
+- Теоретическое ускорение возможно в случае, когда: `n/2**m > n/p `, то есть при p > `2**m` (при нормальном распределении m = 1)
 
 ### Используемые директивы OpenMP
 
 `
-#pragma omp parallel num_threads(threads) shared(array, count) reduction(max: max) default(none)
+#pragma omp parallel num_threads(threads) reduction(min: index)
 `
 
 **pragma omp parallel** - задается параллельная область для следующего за ней структурированного блока
@@ -64,11 +68,7 @@ CPU:
 **num_threads(threads)** - явно задается
 количество потоков, которые будут выполнять параллельную работу 
 
-**shared(array, count)** - задает общие переменные для потоков (используется для наглядности, ибо и без нее все переменные, объявленные вне параллельной области, являются общими)
-
-**reduction(max:max)** - для переменной max создаются локальные копии в каждом потоке, а после выполнения всех операторов в параллельной области выполняется заданный оператор (в данном случае - находится максимум)
-
-**default(none)** - всем переменным в параллельной области, которым явно не назначен класс, будет назначен указанный в аргументе класс
+**reduction(min: index)** - для переменной max создаются локальные копии в каждом потоке, а после выполнения всех операторов в параллельной области выполняется заданный оператор (в данном случае - находится максимум)
 
 `#pragma omp for`
 
@@ -77,11 +77,11 @@ CPU:
 ## Вычисления
 
 - Последовательный алгоритм
-    - Average number of operations 10000016
-    - Average time of work 0.020356 seconds
+    - Average time of work 0.020368 seconds
+    - Average time of work 0.010239 seconds (если target есть в данном массиве и он 1)    
 
 - Параллельный алгортим
-    - [Результаты работы](scripts/parallel_results.txt)
+    - [Результаты работы](scripts/parallel_results.txt) 
 
 ## Экспериментальные данные
 
@@ -101,7 +101,7 @@ CPU:
 
 ## Заключение
 
-В ходе данной работы с использованием библиотеки OpenMP в языке программирования C было установлено то, что реальное время работы и ускорение за счет использования нескольких тредов может отличаться от ожидаемого времени работы программы. По графикам видно, что после 8 тредов мы не получаем выигрыша в ускорении.
+В ходе данной работы с использованием библиотеки OpenMP в языке программирования C было установлено то, что нельзя использовать `break` в цикле OpenMP и то, что при распараллеливании задачи при определенных условиях время будет увеличиваться, так как стандартный алгоритм будет эффективнее. (см. раздел оценки сложности)
 
 ## Приложение
 
@@ -116,48 +116,39 @@ int main(int argc, char** argv)
 {
     const int count = 10000000;     ///< Number of array elements
     const int random_seed = 123123; ///< RNG seed
-    const int attempts = 50; 
+    const int attempts = 25; 
+    const int thread_limit = 25;
+    const int target = 1337;
+
 
     int* array = 0;                 ///< The array we need to find the max in
-    int  max;              ///< The maximal element
-    int operations = 0;
+    int  index;              ///< The maximal element
     /* Initialize the RNG */
     srand(random_seed);
 
     /* Generate the random array */
     array = (int*)malloc(count*sizeof(int));
-    for(int j=0; j < attempts; j++){
-        max = -1;
-        for(int i = 0; i < count; i++) { array[i] = rand(); }
-        for(int i = 0; i < count; i++){            
-            if (array[i] > max){
-                max = array[i];
-                operations++;
-            } 
-            operations++;
-        }
-    }
-    printf("Average number of operations %d\n", operations / attempts);
     
     double start_time, end_time, total = 0;
+
     for(int j=0; j < attempts; j++){
-        max = -1;
+        index = -1;
         for(int i = 0; i < count; i++) { array[i] = rand(); }
         start_time = omp_get_wtime();
-        for(int i = 0; i < count; i++){            
-            if (array[i] > max){
-                max = array[i];
+        for(int i = 0; i < count; i++){           
+            if (array[i] == target){
+                index = i;
+                break;
             } 
         }
         end_time = omp_get_wtime();
         total += end_time - start_time;
     }
-    
     printf("Average time of work %f seconds\n", total / (double)attempts);
-
 
     free(array);    
     return(0);
+}
 }
 ```
 
@@ -172,12 +163,12 @@ int main(int argc, char** argv)
 {
     const int count = 10000000;     ///< Number of array elements
     const int random_seed = 123123; ///< RNG seed
-    const int attempts = 50; 
+    const int attempts = 25; 
     const int thread_limit = 25;
+    const int target = 1337;
 
     int* array = 0;                 ///< The array we need to find the max in
-    int  max;              ///< The maximal element
-    int operations = 0;
+    int  index;              ///< The maximal element
     /* Initialize the RNG */
     srand(random_seed);
 
@@ -188,15 +179,16 @@ int main(int argc, char** argv)
     for(int threads = 1; threads < thread_limit; threads++){
         total = 0;
         for(int j=0; j < attempts; j++){
-            max = -1;
-            for(int i = 0; i < count; i++) { array[i] = rand(); }
+            index = -1;
+            for(int i = 0; i < count; i++) { array[i] = rand();}
             start_time = omp_get_wtime();
-            #pragma omp parallel num_threads(threads) shared(array, count) reduction(max: max) default(none)
+            #pragma omp parallel num_threads(threads) reduction(min: index)
             {
                 #pragma omp for
-                for(int i = 0; i < count; i++){            
-                    if (array[i] > max){
-                        max = array[i];
+                for(int i = 0; i < count; i++){     
+                    if (array[i] == target){
+                        index = i;
+                        // break; Cant use break in OpenMP loop
                     } 
                 }
             }
