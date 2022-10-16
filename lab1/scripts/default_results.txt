@@ -1,0 +1,2 @@
+Average number of operations 10000016
+Average time of work 0.020356 seconds
