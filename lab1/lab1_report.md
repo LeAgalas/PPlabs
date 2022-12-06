@@ -28,7 +28,7 @@ CPU:
 
 
 ```mermaid
-    graph LR
+    graph TB
         %%{ init : {"flowchart" : { "curve" : "stepAfter", "diagramPadding": 20 }}}%%
         A(Начало) --> B(i: 0 -> n)
         
