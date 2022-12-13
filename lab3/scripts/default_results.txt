@@ -1,0 +1,1 @@
+Average time of work 0.318274 seconds
