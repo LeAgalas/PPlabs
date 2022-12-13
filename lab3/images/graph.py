@@ -69,7 +69,7 @@ def get_plot(ylabel, unit, unitbound, threadbound, filename, all_ts, ymax, cores
     p.figure.savefig(filename)
 
 
-threadbound = 24
+threadbound = 19
 cores = 8
 ts = ts[:threadbound]
 
